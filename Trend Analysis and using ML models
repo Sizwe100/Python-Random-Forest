@@ -1,0 +1,107 @@
+# By Nkanyiso and Sizwe
+# For MSc Project
+# Date: 15/08/2024
+# @ UniZulu
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.interpolate import interp1d
+from scipy.stats import kendalltau
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+
+# Read data
+file_path = "C:/Users/USER/Documents/Masters/R studio code/MonthlyRemoteSensingData3_Mtuba.csv"
+mydata = pd.read_csv(file_path, sep=";")
+
+# Format date column
+mydata['date'] = pd.to_datetime(mydata['date'], format="%Y/%m/%d")
+
+# Preview data
+print(mydata.head(3))
+
+# Plotting example: Evapotranspiration over time
+plt.figure(figsize=(10, 6))
+plt.plot(mydata['date'], mydata['ET'], label="ET", color="blue")
+plt.title("La Chagra Farm: Evapotranspiration")
+plt.xlabel("Date")
+plt.ylabel("Evapotranspiration (kg/m^2/8day)")
+plt.xticks(rotation=45)
+plt.grid()
+plt.legend()
+plt.show()
+
+# Interpolation for missing SPEI3 and SPI3 values
+for col in ['SPEI3', 'SPI3']:
+    non_na_indices = mydata[~mydata[col].isna()].index
+    interp_func = interp1d(non_na_indices, mydata.loc[non_na_indices, col], kind='cubic', fill_value="extrapolate")
+    mydata[col] = interp_func(mydata.index)
+
+# Plotting SPEI3 and SPI3
+plt.figure(figsize=(10, 6))
+plt.plot(mydata['date'], mydata['SPEI3'], label="SPEI3", color="green")
+plt.plot(mydata['date'], mydata['SPI3'], label="SPI3", color="red")
+plt.title("Mtuba: SPEI3 and SPI3")
+plt.xlabel("Date")
+plt.ylabel("Index")
+plt.legend()
+plt.grid()
+plt.show()
+
+# Correlation matrix and heatmap
+selected_columns = mydata.iloc[:, 1:]  # Selecting numerical columns
+corr_matrix = selected_columns.corr(method="pearson")
+plt.figure(figsize=(12, 10))
+sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", vmin=-1, vmax=1)
+plt.title("Correlation Matrix")
+plt.show()
+
+# Random Forest Model
+X = mydata[['Nino3.4', 'DMI', 'ET', 'SPI3', 'SPEI3', 'SAVI', 'MSAVI', 'EVI', 'RF', 'NDVI']]
+y = mydata['VCI']
+
+# Splitting data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=123)
+
+# Train Random Forest Regressor
+rf = RandomForestRegressor(n_estimators=300, max_features=4, random_state=123)
+rf.fit(X_train, y_train)
+
+# Feature Importance
+feature_importances = pd.DataFrame({
+    'Feature': X.columns,
+    'Importance': rf.feature_importances_
+}).sort_values(by='Importance', ascending=False)
+print(feature_importances)
+
+# Predictions
+train_preds = rf.predict(X_train)
+test_preds = rf.predict(X_test)
+
+# Evaluate Model
+print("Train R2:", r2_score(y_train, train_preds))
+print("Test R2:", r2_score(y_test, test_preds))
+print("Test MSE:", mean_squared_error(y_test, test_preds))
+
+# Mann-Kendall Trend Test
+vci = mydata['VCI']
+mk_result = kendalltau(range(len(vci)), vci)
+print("Mann-Kendall Tau:", mk_result.correlation)
+print("P-value:", mk_result.pvalue)
+
+# Visualizing trend (Sequential Mann-Kendall Test example)
+zpos = [1.96] * len(vci)
+zneg = [-1.96] * len(vci)
+plt.figure(figsize=(10, 6))
+plt.plot(mydata['date'], vci, label="VCI", color="blue")
+plt.plot(mydata['date'], zpos, linestyle="--", color="red", label="+1.96")
+plt.plot(mydata['date'], zneg, linestyle="--", color="green", label="-1.96")
+plt.title("VCI Sequential Mann-Kendall (Mtuba)")
+plt.xlabel("Date")
+plt.ylabel("VCI")
+plt.legend()
+plt.grid()
+plt.show()
